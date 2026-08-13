@@ -1,0 +1,4 @@
+_qa-*
+*.log
+.DS_Store
+Thumbs.db

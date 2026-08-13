@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>中国灾害防御协会团体标准管理</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="extra.css" />
+</head>
+<body>
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-seal">灾</div><div><strong>团体标准管理</strong><small>中国灾害防御协会</small></div></div>
+    <div class="nav-label">核心功能</div>
+    <nav>
+      <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>工作台</span></button>
+      <button class="nav-item" data-page="projects"><span class="nav-icon">▣</span><span>项目台账</span><em id="projectNavCount">62</em></button>
+      <button class="nav-item" data-page="workflow"><span class="nav-icon">⌘</span><span>流程办理</span></button>
+      <button class="nav-item" data-page="missing"><span class="nav-icon">!</span><span>待补材料</span><b id="missingNavCount">0</b></button>
+      <button class="nav-item" data-page="system"><span class="nav-icon">◇</span><span>标准化体系</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="rule-card"><span>数据来源</span><strong>协会现有团标材料</strong><small>33 项已发布标准 · 62 个项目目录</small></div>
+      <div class="org-card"><div class="avatar">管</div><div><strong>系统管理员</strong><small>协会秘书处</small></div><span>⌄</span></div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="top-left"><button class="mobile-menu" id="mobileMenu">☰</button><span class="breadcrumb" id="breadcrumb">工作台</span></div>
+      <div class="top-actions"><span class="save-state"><i></i>本地自动保存</span><button class="icon-button" id="globalSearchButton" title="搜索">⌕</button><button class="primary small" data-new-project>＋ 新建项目</button></div>
+    </header>
+
+    <div class="page-shell">
+      <section class="page active" data-page-view="dashboard">
+        <div class="page-heading"><div><span class="eyebrow">团体标准全过程管理</span><h1>工作台</h1><p>集中查看项目进度、待办任务和材料完整性。</p></div><button class="primary" data-new-project>＋ 新建项目</button></div>
+        <div class="stats-grid">
+          <article class="stat-card"><span class="stat-symbol navy">▣</span><div><small>项目目录</small><strong>62</strong><p>已扫描现有项目材料</p></div></article>
+          <article class="stat-card"><span class="stat-symbol green">✓</span><div><small>已发布标准</small><strong>33</strong><p>截至 2026 年 5 月清单</p></div></article>
+          <article class="stat-card"><span class="stat-symbol gold">◷</span><div><small>重点在研项目</small><strong id="activeProjectCount">0</strong><p>按现有材料推断环节</p></div></article>
+          <article class="stat-card"><span class="stat-symbol red">!</span><div><small>待确认补件</small><strong id="missingCount">0</strong><p>可补传、忽略或确认</p></div></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="card"><div class="card-head"><div><h2>在研项目进度</h2><p>优先显示接近审查、报批和存在缺件的项目</p></div><button class="text-button" data-go="projects">查看台账 →</button></div><div id="dashboardProjects"></div></article>
+          <article class="card tasks"><div class="card-head"><div><h2>需要处理</h2><p>当前最需要关注的事项</p></div><span class="number-pill" id="taskCount">0</span></div><div id="taskList"></div><button class="card-footer-button" data-go="missing">查看全部待补材料</button></article>
+        </div>
+        <article class="card compact-flow"><div class="card-head"><div><h2>协会标准制定流程</h2><p>提案到出版共 15 个办理节点</p></div><button class="text-button" data-go="workflow">进入流程办理 →</button></div><div id="compactFlow"></div></article>
+      </section>
+
+      <section class="page" data-page-view="projects">
+        <div class="page-heading"><div><span class="eyebrow">统一台账</span><h1>项目台账</h1><p>真实项目名称来自现有材料，当前环节为目录和台账综合判断，可随时修改。</p></div><button class="primary" data-new-project>＋ 新建项目</button></div>
+        <article class="card project-register">
+          <div class="toolbar"><div class="search-box">⌕ <input id="projectSearch" placeholder="搜索标准名称、编号或牵头单位"></div><div><select id="statusFilter"><option value="all">全部环节</option></select><button class="secondary" id="exportProjects">导出台账</button></div></div>
+          <div class="project-table"><div class="table-row table-head"><span>标准项目</span><span>当前环节</span><span>牵头单位</span><span>材料</span><span>进度</span><span>操作</span></div><div id="projectRows"></div></div>
+        </article>
+      </section>
+
+      <section class="page" data-page-view="workflow">
+        <div class="page-heading workflow-heading"><div><span class="eyebrow">实时办理与留痕</span><h1>流程办理</h1><p>选择项目，逐节点查看责任人、所需材料和办理状态。</p></div><button class="primary" id="advanceStage">完成当前环节</button></div>
+        <div class="workflow-top card"><div class="project-selector"><label>当前项目</label><button id="projectSelectButton"><span class="project-mini-icon">标</span><span><strong id="selectedProjectName"></strong><small id="selectedProjectCode"></small></span><em>⌄</em></button><div class="project-menu" id="projectMenu"></div></div><div class="project-summary"><div><span>当前环节</span><strong id="currentStageText"></strong></div><div><span>计划完成</span><strong id="dueDateText"></strong></div><div><span>牵头单位</span><strong id="ownerText"></strong></div><div class="summary-progress"><span>整体进度</span><strong id="progressText"></strong><i><b id="progressBar"></b></i></div></div></div>
+        <div class="workflow-layout"><article class="card flow-canvas"><div class="card-head"><div><h2>办理流程</h2><p>点击节点查看要求；已完成、进行中和待开始状态清晰可见</p></div><div class="legend"><span><i class="done-dot"></i>已完成</span><span><i class="active-dot"></i>进行中</span><span><i></i>待开始</span></div></div><div class="phase-strip" id="phaseStrip"></div><div class="flow-board" id="flowBoard"></div></article><aside class="card stage-detail" id="stageDetail"></aside></div>
+        <article class="card activity-card"><div class="card-head"><div><h2>办理记录</h2><p>提交、修改、退回和完成动作保存在本机浏览器</p></div><button class="secondary small-button" id="clearActivities">清理演示记录</button></div><div class="activity-table"><div class="table-row table-head"><span>时间</span><span>项目</span><span>办理动作</span><span>操作人</span><span>结果</span></div><div id="activityRows"></div></div></article>
+      </section>
+
+      <section class="page" data-page-view="missing">
+        <div class="page-heading"><div><span class="eyebrow">材料完整性检查</span><h1>待补材料</h1><p>根据项目当前环节和文件名自动判断，结果需由管理员人工确认。</p></div><button class="secondary" id="exportMissing">导出清单</button></div>
+        <div class="notice-box"><strong>判断说明</strong><span>系统只根据现有目录和文件名称比对；若材料使用了其他名称或存放在其他位置，可点击“忽略误报”。</span></div>
+        <article class="card"><div class="toolbar"><div class="search-box">⌕ <input id="missingSearch" placeholder="搜索项目或材料名称"></div><div><select id="missingStageFilter"><option value="all">全部环节</option></select><select id="missingStateFilter"><option value="open">待处理</option><option value="all">全部状态</option><option value="resolved">已补充</option><option value="ignored">已忽略</option></select></div></div><div class="missing-list" id="missingList"></div></article>
+      </section>
+
+      <section class="page" data-page-view="system">
+        <div class="page-heading"><div><span class="eyebrow">协会标准化体系建设</span><h1>标准化体系</h1><p>以现有 33 项正式团体标准为基础，逐步形成“制度—领域—项目—实施评价”体系。</p></div><button class="primary" id="addSystemItem">＋ 添加体系任务</button></div>
+        <div class="system-grid">
+          <article class="card system-map"><div class="card-head"><div><h2>体系框架</h2><p>建议按五层组织协会标准化工作</p></div></div><div id="systemLayers"></div></article>
+          <article class="card"><div class="card-head"><div><h2>建设任务</h2><p>用于后续补齐协会标准化体系</p></div><span class="number-pill" id="roadmapCount"></span></div><div id="roadmapList"></div></article>
+        </div>
+        <article class="card standard-library"><div class="card-head"><div><h2>已发布团体标准库</h2><p>依据《中国灾害防御协会已发布团体标准清单》（截至 2026 年 5 月）</p></div><div class="search-box slim">⌕ <input id="standardSearch" placeholder="搜索编号或标准名称"></div></div><div class="standard-table"><div class="table-row table-head"><span>标准编号</span><span>标准名称</span><span>发布年份</span><span>体系领域</span></div><div id="standardRows"></div></div></article>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="projectDialog" class="project-dialog"><form id="newProjectForm"><div class="dialog-head"><div><span class="eyebrow">新项目</span><h2>创建标准项目</h2><p>保存后进入“提交标准提案”环节。</p></div><button type="button" data-close-dialog>×</button></div><div class="form-section"><div class="form-grid"><label>标准名称<input name="name" required placeholder="请输入标准名称"></label><label>项目编号<input name="code" placeholder="暂未编号可留空"></label><label>牵头单位<input name="owner" required placeholder="请输入牵头单位"></label><label>计划完成日期<input name="due" type="date"></label></div><label class="full">备注<textarea name="notes" rows="3" placeholder="记录项目背景或特别说明"></textarea></label></div><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>取消</button><button type="submit" class="primary">保存项目</button></div></form></dialog>
+
+  <dialog id="editDialog" class="project-dialog"><form id="editProjectForm"><input type="hidden" name="id"><div class="dialog-head"><div><span class="eyebrow">项目维护</span><h2>修改项目信息</h2><p>修改将自动保存在当前浏览器。</p></div><button type="button" data-close-edit>×</button></div><div class="form-section"><div class="form-grid"><label>标准名称<input name="name" required></label><label>项目编号<input name="code"></label><label>牵头单位<input name="owner"></label><label>计划完成日期<input name="due" type="date"></label><label>当前环节<select name="current" id="editStageSelect"></select></label><label>项目状态<select name="status"><option>在研</option><option>暂停</option><option>已发布</option><option>已撤销</option></select></label></div><label class="full">备注<textarea name="notes" rows="3"></textarea></label></div><div class="dialog-actions"><button type="button" class="secondary" data-close-edit>取消</button><button type="submit" class="primary">保存修改</button></div></form></dialog>
+
+  <dialog id="uploadDialog" class="info-dialog"><div class="dialog-head"><div><span class="eyebrow">补充材料</span><h2 id="uploadTitle">上传文件</h2></div><button type="button" data-close-upload>×</button></div><div class="form-section"><label class="upload-box"><input type="file" id="missingFile"><span>⇧</span><strong>选择补充材料</strong><small>原型将记录文件名；正式版可接入服务器或协会文件存储</small></label><div class="selected-file" id="missingSelectedFile"></div></div><div class="dialog-actions"><button class="secondary" data-close-upload>取消</button><button class="primary" id="confirmUpload">确认补充</button></div></dialog>
+
+  <div class="toast" id="toast"><span>✓</span><div><strong>操作成功</strong><small id="toastMessage"></small></div></div>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
