@@ -125,7 +125,7 @@ const scannedProjectCatalog = [
   [2062,'高位远程地质灾害防治工程技术指南',20,11,'在研']
 ];
 
-const normalizeProjectName = value => value.replace(/[^\u4e00-\u9fffA-Za-z0-9]/g,'');
+const normalizeProjectName = value => value.replace(/防洪防涝排水/g,'防洪排涝').replace(/[^\u4e00-\u9fffA-Za-z0-9]/g,'');
 const seedProjects = scannedProjectCatalog.map(([id,name,files,current,status])=>{
   const normalized=normalizeProjectName(name);
   const detail=detailedProjects.find(item=>{

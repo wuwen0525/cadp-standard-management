@@ -2,3 +2,9 @@ _qa-*
 *.log
 .DS_Store
 Thumbs.db
+.runtime/
+data/
+.env
+*.db
+*.db-shm
+*.db-wal

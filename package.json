@@ -1,0 +1,15 @@
+{
+  "name": "cadp-standard-management",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "中国灾害防御协会团体标准全过程管理系统",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
