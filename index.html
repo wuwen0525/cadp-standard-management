@@ -6,6 +6,7 @@
   <title>中国灾害防御协会团体标准管理</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="extra.css" />
+  <link rel="stylesheet" href="analytics.css" />
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -13,13 +14,16 @@
     <div class="nav-label">核心功能</div>
     <nav>
       <button class="nav-item active" data-page="dashboard"><span class="nav-icon">⌂</span><span>工作台</span></button>
+      <button class="nav-item" data-page="analytics"><span class="nav-icon">◫</span><span>数据看板</span></button>
       <button class="nav-item" data-page="projects"><span class="nav-icon">▣</span><span>项目台账</span><em id="projectNavCount">62</em></button>
+      <button class="nav-item" data-page="ledger"><span class="nav-icon">表</span><span>历史台账</span><em id="ledgerNavCount">0</em></button>
       <button class="nav-item" data-page="workflow"><span class="nav-icon">⌘</span><span>流程办理</span></button>
       <button class="nav-item" data-page="missing"><span class="nav-icon">!</span><span>待补材料</span><b id="missingNavCount">0</b></button>
       <button class="nav-item" data-page="system"><span class="nav-icon">◇</span><span>标准化体系</span></button>
+      <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>系统设置</span></button>
     </nav>
     <div class="sidebar-foot">
-      <div class="rule-card"><span>数据来源</span><strong>协会现有团标材料</strong><small>33 项已发布标准 · 62 个项目目录</small></div>
+      <div class="rule-card"><span>数据来源</span><strong>协会现有团标材料</strong><small>33 项已发布标准 · 62 个项目目录 · Excel 历史台账</small></div>
       <div class="org-card"><div class="avatar">管</div><div><strong id="currentUserName">系统管理员</strong><small id="currentUserRole">协会秘书处</small></div><button id="logoutButton" type="button" hidden>退出</button></div>
     </div>
   </aside>
@@ -46,10 +50,26 @@
         <article class="card compact-flow"><div class="card-head"><div><h2>协会标准制定流程</h2><p>提案到出版共 15 个办理节点</p></div><button class="text-button" data-go="workflow">进入流程办理 →</button></div><div id="compactFlow"></div></article>
       </section>
 
+      <section class="page" data-page-view="analytics">
+        <div class="page-heading"><div><span class="eyebrow">实时汇总与趋势分析</span><h1>团体标准数据看板</h1><p>从项目、流程、材料和历史 Excel 台账中自动汇总重要数据。</p></div><button class="secondary" id="refreshAnalytics" type="button">刷新数据</button></div>
+        <div class="analytics-board">
+          <div class="analytics-title"><span></span><div><small>中国灾害防御协会</small><h2>团体标准管理数据中心</h2><p id="analyticsTimestamp">数据更新时间</p></div><span></span></div>
+          <div class="analytics-kpis" id="analyticsKpis"></div>
+          <div class="analytics-grid">
+            <article class="analytics-panel trend-panel"><div class="panel-title"><span>年度发布趋势</span><em>正式标准</em></div><div id="publishedTrendChart" class="svg-chart"></div></article>
+            <article class="analytics-panel stage-panel"><div class="panel-title"><span>流程阶段分布</span><em>当前项目</em></div><div id="stageDistribution" class="stage-bars"></div></article>
+            <article class="analytics-panel donut-panel"><div class="panel-title"><span>项目状态构成</span><em>实时</em></div><div id="statusDonut"></div></article>
+            <article class="analytics-panel quality-panel"><div class="panel-title"><span>材料完整性</span><em>质控</em></div><div id="qualityMetrics"></div></article>
+            <article class="analytics-panel plan-panel"><div class="panel-title"><span>2025 年立项计划</span><em id="planTotal">0 项</em></div><div id="annualPlanPreview"></div></article>
+            <article class="analytics-panel process-panel"><div class="panel-title"><span>十五步全流程热力</span><em>项目所在节点</em></div><div id="processHeatmap"></div></article>
+          </div>
+        </div>
+      </section>
+
       <section class="page" data-page-view="projects">
         <div class="page-heading"><div><span class="eyebrow">统一台账</span><h1>项目台账</h1><p>真实项目名称来自现有材料，当前环节为目录和台账综合判断，可随时修改。</p></div><button class="primary" data-new-project>＋ 新建项目</button></div>
         <article class="card project-register">
-          <div class="toolbar"><div class="search-box">⌕ <input id="projectSearch" placeholder="搜索标准名称、编号或牵头单位"></div><div><select id="statusFilter"><option value="all">全部环节</option></select><button class="secondary" id="exportProjects">导出台账</button></div></div>
+          <div class="toolbar"><div class="search-box">⌕ <input id="projectSearch" placeholder="搜索标准名称、编号或牵头单位"></div><div><select id="statusFilter"><option value="all">全部环节</option></select><select id="archiveFilter"><option value="active">在用项目</option><option value="archived">已归档</option><option value="all">全部项目</option></select><button class="secondary" id="exportProjects">导出台账</button></div></div>
           <div class="project-table"><div class="table-row table-head"><span>标准项目</span><span>当前环节</span><span>牵头单位</span><span>材料</span><span>进度</span><span>操作</span></div><div id="projectRows"></div></div>
         </article>
       </section>
@@ -75,6 +95,26 @@
         </div>
         <article class="card standard-library"><div class="card-head"><div><h2>已发布团体标准库</h2><p>依据《中国灾害防御协会已发布团体标准清单》（截至 2026 年 5 月）</p></div><div class="search-box slim">⌕ <input id="standardSearch" placeholder="搜索编号或标准名称"></div></div><div class="standard-table"><div class="table-row table-head"><span>标准编号</span><span>标准名称</span><span>发布年份</span><span>体系领域</span></div><div id="standardRows"></div></div></article>
       </section>
+
+      <section class="page" data-page-view="ledger">
+        <div class="page-heading"><div><span class="eyebrow">原始工作信息归档</span><h1>历史 Excel 台账</h1><p>保留原表项目进展、委托方、费用和联系人信息；敏感明细仅授权人员可见。</p></div><button class="secondary" id="exportLedger" type="button">导出台账</button></div>
+        <div class="ledger-summary" id="ledgerSummaryCards"></div>
+        <article class="card ledger-source-card"><div><strong id="ledgerSourceName">尚未导入 Excel</strong><span id="ledgerSourceMeta">导入后显示源文件信息</span></div><div class="ledger-plan-chips" id="ledgerPlanChips"></div></article>
+        <article class="card ledger-register">
+          <div class="toolbar"><div class="search-box">⌕ <input id="ledgerSearch" placeholder="搜索标准名称、编号、委托方或联系人"></div><div><select id="ledgerStageFilter"><option value="all">全部环节</option></select><select id="ledgerStatusFilter"><option value="all">全部状态</option><option value="在研">在研</option><option value="已发布">已发布</option><option value="待核实">待核实</option><option value="已撤销">已撤销</option></select></div></div>
+          <div class="ledger-table"><div class="table-row table-head"><span>标准项目</span><span>当前环节</span><span>委托方 / 联系人</span><span>费用总额</span><span>关联状态</span><span>操作</span></div><div id="ledgerRows"></div></div>
+        </article>
+      </section>
+
+      <section class="page" data-page-view="settings">
+        <div class="page-heading"><div><span class="eyebrow">安全与维护</span><h1>系统设置</h1><p>账号、人员权限和数据备份集中在一个页面管理。</p></div></div>
+        <div class="security-notice" id="passwordNotice" hidden><strong>首次登录请修改密码</strong><span>修改完成后才能办理项目、上传材料或下载档案。</span></div>
+        <div class="settings-grid">
+          <article class="card settings-card"><div class="card-head"><div><h2>修改密码</h2><p>新密码至少 10 位，建议包含字母、数字和符号</p></div><span class="settings-icon">锁</span></div><form id="passwordForm" class="stack-form"><label>当前密码<input name="currentPassword" type="password" autocomplete="current-password" required></label><label>新密码<input name="newPassword" type="password" minlength="10" autocomplete="new-password" required></label><label>确认新密码<input name="confirmPassword" type="password" minlength="10" autocomplete="new-password" required></label><button class="primary" type="submit">保存新密码</button></form></article>
+          <article class="card settings-card" id="backupCard"><div class="card-head"><div><h2>数据备份</h2><p>数据库和项目附件每天自动备份一次</p></div><button class="secondary small-button" id="createBackup" type="button">立即备份</button></div><div class="backup-summary" id="backupSummary"></div><div class="backup-list" id="backupList"></div></article>
+        </div>
+        <article class="card user-management" id="userManagement"><div class="card-head"><div><h2>用户与权限</h2><p>管理员、经办人、专家和只读人员分级使用</p></div><button class="primary small" id="addUser" type="button">＋ 添加用户</button></div><div class="user-table"><div class="table-row table-head"><span>用户</span><span>账号</span><span>角色</span><span>最近登录</span><span>状态</span></div><div id="userRows"></div></div></article>
+      </section>
     </div>
   </main>
 
@@ -85,6 +125,12 @@
   <dialog id="uploadDialog" class="info-dialog"><div class="dialog-head"><div><span class="eyebrow">补充材料</span><h2 id="uploadTitle">上传文件</h2></div><button type="button" data-close-upload>×</button></div><div class="form-section"><label class="upload-box"><input type="file" id="missingFile"><span>⇧</span><strong>选择补充材料</strong><small>文件将保存到项目档案库，单个文件不超过 30 MB</small></label><div class="selected-file" id="missingSelectedFile"></div></div><div class="dialog-actions"><button class="secondary" data-close-upload>取消</button><button class="primary" id="confirmUpload">上传并完成</button></div></dialog>
 
   <dialog id="loginDialog" class="login-dialog"><form id="loginForm"><div class="login-brand"><div class="brand-seal">灾</div><div><span class="eyebrow">中国灾害防御协会</span><h2>团体标准管理</h2><p>登录后进入统一数据库。</p></div></div><div class="login-fields"><label>账号<input name="username" value="admin" autocomplete="username" required></label><label>密码<input name="password" type="password" autocomplete="current-password" required></label><p class="login-error" id="loginError"></p></div><button class="primary login-submit" type="submit">登录系统</button></form></dialog>
+
+  <dialog id="archiveDialog" class="project-dialog"><div class="archive-dialog-body"><div class="dialog-head"><div><span class="eyebrow">项目档案</span><h2 id="archiveProjectName">项目文件</h2><p>文件按流程节点统一归档，已归档文件可直接下载。</p></div><button type="button" data-close-archive>×</button></div><form id="archiveUploadForm" class="archive-upload"><label>归档节点<select name="stage" id="archiveStageSelect"></select></label><label class="archive-file-picker">选择文件<input name="file" type="file" required></label><button class="primary" type="submit">上传归档</button></form><div class="archive-file-list" id="archiveFileList"></div></div></dialog>
+
+  <dialog id="userDialog" class="info-dialog"><form id="userForm"><div class="dialog-head"><div><span class="eyebrow">用户管理</span><h2>添加系统用户</h2></div><button type="button" data-close-user>×</button></div><div class="form-section"><div class="form-grid"><label>登录账号<input name="username" required placeholder="如 zhangsan"></label><label>姓名<input name="displayName" required placeholder="请输入姓名"></label><label>角色<select name="role"><option value="operator">经办人</option><option value="viewer">只读人员</option><option value="expert">专家</option><option value="admin">管理员</option></select></label><label>初始密码<input name="password" type="password" minlength="10" required placeholder="至少 10 位"></label></div><p class="form-hint">新用户首次登录后必须修改初始密码。</p></div><div class="dialog-actions"><button type="button" class="secondary" data-close-user>取消</button><button type="submit" class="primary">创建用户</button></div></form></dialog>
+
+  <dialog id="ledgerDialog" class="project-dialog ledger-dialog"><form id="ledgerForm"><input type="hidden" name="id"><div class="dialog-head"><div><span class="eyebrow">历史 Excel 台账</span><h2 id="ledgerDialogTitle">台账详情</h2><p id="ledgerDialogSource">原表位置</p></div><button type="button" data-close-ledger>×</button></div><div class="form-section"><div class="form-grid"><label>标准名称<input name="projectName" required></label><label>计划编号<input name="planCode"></label><label>标准编号<input name="standardCode"></label><label>当前环节<select name="currentStage" id="ledgerStageSelect"></select></label><label>状态<select name="status"><option>在研</option><option>暂停</option><option>待核实</option><option>已发布</option><option>已撤销</option></select></label><label>委托方<input name="commissioningUnit"></label><label>联系人<input name="contact"></label><label>立项论证服务费（万）<input name="establishmentFee"></label><label>征求意见及审查费（万）<input name="reviewFee"></label><label>出版费（万）<input name="publicationFee"></label><label>费用总额（万）<input name="totalFee"></label><label>专家劳务费<input name="expertFee"></label></div><label class="full">合同信息（原表路径）<textarea name="contractInfo" rows="2"></textarea></label><label class="full">备注<textarea name="remarks" rows="2"></textarea></label><div class="ledger-progress-detail"><strong>原表已有材料 / 进展</strong><div id="ledgerProgressDetail"></div></div></div><div class="dialog-actions"><button type="button" class="secondary" data-close-ledger>关闭</button><button type="submit" class="primary" id="saveLedgerRecord">保存修改</button></div></form></dialog>
 
   <div class="toast" id="toast"><span>✓</span><div><strong>操作成功</strong><small id="toastMessage"></small></div></div>
   <script src="data.js"></script>
