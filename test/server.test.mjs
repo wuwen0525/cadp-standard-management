@@ -218,6 +218,11 @@ test('数据库接口、文件归档、实时同步和重启持久化', async ()
     assert.equal(uploaded.document.size, fileContent.length);
     const downloaded = Buffer.from(await (await request(uploaded.document.downloadUrl)).arrayBuffer());
     assert.deepEqual(downloaded, fileContent);
+    assert.match(uploaded.document.previewUrl, /\/preview$/);
+    const previewResponse = await request(uploaded.document.previewUrl);
+    assert.match(previewResponse.headers.get('content-disposition'), /^inline/);
+    assert.equal(previewResponse.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(Buffer.from(await previewResponse.arrayBuffer()), fileContent);
 
     const archiveUpload = await (await request('/api/projects/' + created.project.id + '/documents?stage=2&filename=archive-note.txt', {
       method: 'POST',
@@ -225,6 +230,15 @@ test('数据库接口、文件归档、实时同步和重启持久化', async ()
       body: Buffer.from('project archive file', 'utf8')
     })).json();
     assert.equal(archiveUpload.document.stage, 2);
+
+    const htmlUpload = await (await request('/api/projects/' + created.project.id + '/documents?stage=2&filename=unsafe.html', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/html' },
+      body: Buffer.from('<script>throw new Error("不应执行")</script>', 'utf8')
+    })).json();
+    assert.equal(htmlUpload.document.previewUrl, '');
+    const blockedHtmlPreview = await fetch(base + '/api/documents/' + htmlUpload.document.id + '/preview', { headers: { Cookie: cookie } });
+    assert.equal(blockedHtmlPreview.status, 415);
 
     const roadmap = await (await request('/api/roadmap', {
       method: 'POST',
