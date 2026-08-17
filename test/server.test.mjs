@@ -42,7 +42,36 @@ async function login(base, username = 'admin', password = 'qa-password-123') {
   return response.headers.get('set-cookie').split(';')[0];
 }
 
-test('数据库接口、文件归档和重启持久化', async () => {
+function eventReader(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const next = async expected => {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      let boundary;
+      while ((boundary = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const event = block.match(/^event: (.+)$/m)?.[1];
+        const data = block.match(/^data: (.+)$/m)?.[1];
+        if (event === expected) return data ? JSON.parse(data) : {};
+      }
+      const remaining = Math.max(1, deadline - Date.now());
+      let timer;
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('等待实时同步事件超时')), remaining); })
+      ]).finally(() => clearTimeout(timer));
+      if (chunk.done) throw new Error('实时同步连接提前关闭');
+      buffer += decoder.decode(chunk.value, { stream: true }).replaceAll('\r\n', '\n');
+    }
+    throw new Error('未收到实时同步事件：' + expected);
+  };
+  return { next, cancel: () => reader.cancel() };
+}
+
+test('数据库接口、文件归档、实时同步和重启持久化', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'cadp-standard-management-'));
   const port = await freePort();
   const base = 'http://127.0.0.1:' + port;
@@ -132,12 +161,23 @@ test('数据库接口、文件归档和重启持久化', async () => {
     assert.equal(blockedAdvance.status, 409);
     assert.equal((await blockedAdvance.json()).code, 'MATERIALS_INCOMPLETE');
 
+    const eventsResponse = await fetch(base + '/api/events', { headers: { Cookie: cookie } });
+    assert.equal(eventsResponse.status, 200);
+    assert.match(eventsResponse.headers.get('content-type'), /^text\/event-stream/);
+    const events = eventReader(eventsResponse);
+    const readyEvent = await events.next('ready');
+    assert.ok(Number(readyEvent.revision) > 0);
+
     const created = await (await request('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: '接口联调测试标准', code: 'QA-001', owner: '测试组', due: '2026-12-31', notes: '重启后仍应存在' })
     })).json();
     assert.equal(created.project.name, '接口联调测试标准');
+    const changeEvent = await events.next('change');
+    assert.equal(changeEvent.pathname, '/api/projects');
+    assert.equal(changeEvent.method, 'POST');
+    await events.cancel();
 
     const ledgerId = initial.ledgerRecords[0].id;
     const updatedLedger = await (await request('/api/ledger/' + ledgerId, {

@@ -45,6 +45,10 @@ let uploadMissingId=null;
 let backendEnabled=false;
 let currentUser=null;
 let archiveProjectId=null;
+let liveEventSource=null;
+let liveSyncTimer=null;
+let lastServerRevision=0;
+const isPublicDemo=location.hostname.endsWith('github.io');
 const roleLabels={admin:'管理员',operator:'经办人',viewer:'只读人员',expert:'专家'};
 
 async function apiRequest(path,options={}){
@@ -59,8 +63,22 @@ function setConnection(mode,text){
   const state=$('#saveState');state.classList.remove('demo','error','syncing');if(mode)state.classList.add(mode);$('#saveStateText').textContent=text;
 }
 
+function canWriteData(){return backendEnabled&&permissions.manageProjects&&!currentUser?.mustChangePassword}
+
+function renderModeBanner(){
+  const banner=$('#systemModeBanner'),action=$('#modeBannerAction');
+  if(backendEnabled&&currentUser?.mustChangePassword){
+    banner.hidden=false;banner.className='system-mode-banner';$('#modeBannerIcon').textContent='!';$('#modeBannerTitle').textContent='首次登录需要启用写入功能';$('#modeBannerText').textContent='请先设置一个新的登录密码，完成后即可上传文件、新建项目和修改数据。';action.textContent='立即设置密码';action.dataset.action='password';return;
+  }
+  if(!backendEnabled){
+    banner.hidden=false;banner.className='system-mode-banner demo';$('#modeBannerIcon').textContent='i';$('#modeBannerTitle').textContent=isPublicDemo?'当前是 GitHub Pages 只读演示版':'尚未连接数据后台';$('#modeBannerText').textContent=isPublicDemo?'此页面不连接数据库，不能真实上传或修改。请使用部署了 Node 后端的系统地址。':'请确认后台服务已启动后重新连接，未连接时页面不会保存修改。';action.textContent=isPublicDemo?'打开本机后台':'重新连接';action.dataset.action=isPublicDemo?'local':'retry';return;
+  }
+  banner.hidden=true;action.dataset.action='';
+}
+
 function applyBootstrap(data,preferredProjectId=selectedProject?.id){
   projects=data.projects;missingItems=data.missingItems;roadmap=data.roadmap;activities=data.activities;standards=data.publishedStandards;documents=data.documents||[];users=data.users||[];backups=data.backups||[];ledgerRecords=data.ledgerRecords||[];annualPlans=data.annualPlans||[];ledgerSummary=data.ledgerSummary||ledgerSummary;analyticsData=data.analytics||analyticsData;permissions=data.permissions||permissions;currentUser=data.user;
+  lastServerRevision=Math.max(lastServerRevision,Number(data.revision||0));
   selectedProject=projects.find(project=>project.id===preferredProjectId)||projects[0];selectedStage=selectedProject?.current||1;
   $('#currentUserName').textContent=currentUser?.displayName||'系统管理员';$('#currentUserRole').textContent=roleLabels[currentUser?.role]||'系统用户';$('#logoutButton').hidden=false;
 }
@@ -68,8 +86,24 @@ function applyBootstrap(data,preferredProjectId=selectedProject?.id){
 async function syncFromBackend(preferredProjectId=selectedProject?.id){
   setConnection('syncing','正在同步');
   const data=await apiRequest('/api/bootstrap');
-  backendEnabled=true;applyBootstrap(data,preferredProjectId);setConnection('','数据库已同步');
+  backendEnabled=true;applyBootstrap(data,preferredProjectId);setConnection('','数据库已同步');renderModeBanner();
   return data;
+}
+
+function stopLiveSync(){
+  if(liveEventSource)liveEventSource.close();liveEventSource=null;clearTimeout(liveSyncTimer);
+}
+
+function connectLiveSync(){
+  stopLiveSync();if(!backendEnabled)return;
+  const source=new EventSource('/api/events');liveEventSource=source;
+  source.addEventListener('ready',event=>{try{lastServerRevision=Math.max(lastServerRevision,Number(JSON.parse(event.data).revision||0))}catch{}setConnection('','实时同步已连接')});
+  source.addEventListener('change',event=>{
+    let revision=0;try{revision=Number(JSON.parse(event.data).revision||0)}catch{}
+    if(revision&&revision<=lastServerRevision)return;lastServerRevision=Math.max(lastServerRevision,revision);
+    clearTimeout(liveSyncTimer);liveSyncTimer=setTimeout(async()=>{try{await syncFromBackend();renderAll();setConnection('','数据已自动同步')}catch(error){if(error.status!==401)setConnection('error','同步暂时中断')}},250);
+  });
+  source.onerror=()=>{if(backendEnabled)setConnection('error','正在重新连接后台')};
 }
 
 function showLogin(message=''){
@@ -78,21 +112,21 @@ function showLogin(message=''){
 }
 
 function applyPermissions(){
-  const accountReady=!currentUser?.mustChangePassword,canWrite=(!backendEnabled||permissions.manageProjects)&&accountReady;
+  const accountReady=!currentUser?.mustChangePassword,canWrite=canWriteData();
   $$('[data-new-project]').forEach(button=>button.hidden=!canWrite);
-  $('#advanceStage').hidden=!canWrite;$('#addSystemItem').hidden=!canWrite;$('#clearActivities').hidden=backendEnabled&&(!permissions.manageUsers||!accountReady);
+  $('#advanceStage').hidden=!canWrite;$('#addSystemItem').hidden=!canWrite;$('#clearActivities').hidden=!backendEnabled||!permissions.manageUsers||!accountReady;
   $('#backupCard').hidden=!backendEnabled||!permissions.manageBackups||!accountReady;$('#userManagement').hidden=!backendEnabled||!permissions.manageUsers||!accountReady;
 }
 
-function renderAll(){buildFilters();renderDashboard();renderAnalytics();renderProjectTable();renderLedger();renderMissing();renderSystem();renderActivities();renderSettings();applyPermissions()}
+function renderAll(){buildFilters();renderDashboard();renderAnalytics();renderProjectTable();renderLedger();renderMissing();renderSystem();renderActivities();renderSettings();applyPermissions();renderModeBanner()}
 
 async function initialize(){
   renderAll();
   setConnection('syncing','正在连接数据');
-  try{await syncFromBackend();renderAll();if(currentUser?.mustChangePassword){navigate('settings');showToast('请先修改初始密码','账号安全')}}
+  try{await syncFromBackend();renderAll();connectLiveSync();if(currentUser?.mustChangePassword){navigate('settings');showToast('请先修改初始密码','账号安全')}}
   catch(error){
     if(error.status===401){showLogin();return}
-    backendEnabled=false;setConnection('demo','演示模式 · 本地保存');
+    backendEnabled=false;setConnection('demo','只读演示 · 未连接后台');renderModeBanner();
   }
 }
 
@@ -111,6 +145,7 @@ function progressFor(project){return Math.round(Math.min(100,project.current/sta
 function projectMissing(projectId){return missingItems.filter(item=>item.projectId===projectId&&item.state==='open')}
 
 function navigate(page){
+  if(backendEnabled&&currentUser?.mustChangePassword&&page!=='settings'){page='settings';showToast('设置新密码后即可上传和修改数据','请先启用账号')}
   $$('.page').forEach(view=>view.classList.toggle('active',view.dataset.pageView===page));
   $$('.nav-item[data-page]').forEach(item=>item.classList.toggle('active',item.dataset.page===page));
   $('#breadcrumb').textContent=$(`.nav-item[data-page="${page}"] span:last-of-type`)?.textContent||'工作台';
@@ -205,7 +240,7 @@ function buildFilters(){
 
 function renderProjectTable(){
   updateCounts();
-  const query=$('#projectSearch').value.trim().toLowerCase(),status=$('#statusFilter').value,archive=$('#archiveFilter').value,canWrite=(!backendEnabled||permissions.manageProjects)&&!currentUser?.mustChangePassword;
+  const query=$('#projectSearch').value.trim().toLowerCase(),status=$('#statusFilter').value,archive=$('#archiveFilter').value,canWrite=canWriteData();
   const filtered=projects.filter(p=>(archive==='all'||(archive==='archived'&&p.archived)||(archive==='active'&&!p.archived))&&(status==='all'||stages[p.current-1].name===status)&&`${p.name}${p.code}${p.owner}`.toLowerCase().includes(query));
   $('#projectRows').innerHTML=filtered.map(project=>`<div class="table-row ${project.archived?'archived-project':''}"><span class="project-name"><i>标</i><span><strong>${h(project.name)}</strong><small>${h(project.code||'暂未编号')} · ${project.files||0} 个目录文件 ${project.archived?'· 已归档':''}</small></span></span><span>${project.archived?'<i class="archived-badge">已归档</i>':`<i class="project-status">${h(stages[project.current-1].name)}</i>`}</span><span>${h(project.owner||'待补充')}</span><span><b class="material-count ${projectMissing(project.id).length?'has-missing':''}">${projectMissing(project.id).length?`${projectMissing(project.id).length} 待确认`:'完整'}</b></span><span>${progressFor(project)}%</span><span class="row-actions"><button data-open="${project.id}">${canWrite&&!project.archived?'办理':'查看'}</button><button data-archive-files="${project.id}">档案</button>${canWrite?`<button data-edit="${project.id}">修改</button><button data-toggle-archive="${project.id}">${project.archived?'恢复':'归档'}</button>`:''}</span></div>`).join('')||'<div class="empty-state">没有找到符合条件的项目</div>';
   $$('[data-open]').forEach(button=>button.addEventListener('click',()=>openWorkflow(Number(button.dataset.open))));
@@ -291,7 +326,7 @@ function renderFlowBoard(){
 
 function renderStageDetail(){
   const stage=stages[selectedStage-1],isDone=selectedStage<selectedProject.current,isActive=selectedStage===selectedProject.current;
-  const canWrite=(!backendEnabled||permissions.manageProjects)&&!currentUser?.mustChangePassword;
+  const canWrite=canWriteData();
   const missingAtStage=missingItems.filter(i=>i.projectId===selectedProject.id&&i.stage===selectedStage&&i.state==='open');
   const stageDocuments=documents.filter(item=>item.projectId===selectedProject.id&&item.stage===selectedStage);
   const originalNotes=selectedProject.notes;selectedProject.notes=h(originalNotes||'暂无备注');
@@ -316,7 +351,7 @@ function renderActivities(){
 }
 
 function renderMissing(){
-  updateCounts(); const q=$('#missingSearch').value.trim().toLowerCase(),stage=$('#missingStageFilter').value,state=$('#missingStateFilter').value,canWrite=(!backendEnabled||permissions.manageProjects)&&!currentUser?.mustChangePassword;
+  updateCounts(); const q=$('#missingSearch').value.trim().toLowerCase(),stage=$('#missingStageFilter').value,state=$('#missingStateFilter').value,canWrite=canWriteData();
   const filtered=missingItems.filter(item=>(state==='all'||item.state===state)&&(stage==='all'||item.category===stage)&&`${item.material}${projects.find(p=>p.id===item.projectId)?.name||''}`.toLowerCase().includes(q));
   $('#missingList').innerHTML=filtered.map(item=>{const project=projects.find(p=>p.id===item.projectId),writeActions=canWrite?(item.state==='open'?`<button class="primary" data-upload="${item.id}">补充文件</button><button class="secondary" data-ignore="${item.id}">忽略误报</button>`:`<button class="secondary" data-reopen="${item.id}">重新打开</button>`):'';return `<div class="missing-item ${item.state!=='open'?'closed':''}"><span class="missing-icon">${item.state==='open'?'!':item.state==='resolved'?'✓':'—'}</span><div class="missing-main"><div><strong>${h(item.material)}</strong><i class="project-status">${h(item.category)}</i></div><p>${h(project?.name||'未知项目')}</p><small>${h(item.filename||item.source)} · ${item.state==='open'?'待人工确认':item.state==='resolved'?'已补充':'已忽略误报'}</small></div><div class="missing-actions">${writeActions}<button class="text-button" data-project="${item.projectId}">查看项目</button></div></div>`}).join('')||'<div class="empty-state">没有符合条件的待补材料</div>';
   $$('[data-upload]').forEach(b=>b.addEventListener('click',()=>openUpload(Number(b.dataset.upload))));
@@ -343,7 +378,7 @@ function renderArchiveFiles(){
   const project=projects.find(item=>item.id===archiveProjectId);if(!project)return;
   const files=documents.filter(item=>item.projectId===project.id).sort((a,b)=>b.id-a.id);
   $('#archiveProjectName').textContent=project.name;$('#archiveStageSelect').value=String(project.current);
-  $('#archiveUploadForm').hidden=backendEnabled&&(!permissions.manageProjects||currentUser?.mustChangePassword);
+  $('#archiveUploadForm').hidden=!canWriteData();
   $('#archiveFileList').innerHTML=files.map(file=>`<div class="archive-file-item"><span>▤</span><div><strong>${h(file.name)}</strong><small>${h(stages[file.stage-1]?.name||'项目档案')} · ${formatBytes(file.size)} · ${h(file.createdAt)}</small></div><a href="${h(file.downloadUrl)}">下载</a></div>`).join('')||'<div class="empty-state">暂无已归档文件</div>';
 }
 
@@ -375,7 +410,7 @@ async function updateUser(id,changes){
 function categoryFor(name){if(/航空|直升机|无人机/.test(name))return'航空与低空救援';if(/地震|滑坡|地质|泥石流|矿山/.test(name))return'地震地质灾害';if(/洪|旱|气象/.test(name))return'洪涝气象灾害';if(/建筑|房屋|燃气/.test(name))return'建筑与城市安全';if(/应急|救援|物资|食品|装备|机器人/.test(name))return'应急救援与保障';return'综合防灾减灾'}
 
 function renderSystem(){
-  const canWrite=(!backendEnabled||permissions.manageProjects)&&!currentUser?.mustChangePassword;
+  const canWrite=canWriteData();
   $('#systemLayers').innerHTML=systemLayers.map(layer=>`<div class="system-layer"><span>${layer[0]}</span><div><strong>${layer[1]}</strong><p>${layer[2]}</p><small>${layer[3]}</small></div></div>`).join('');
   $('#roadmapCount').textContent=`${roadmap.filter(r=>!r.done).length} 项待办`;
   $('#roadmapList').innerHTML=roadmap.map(item=>`<label class="roadmap-item"><input type="checkbox" data-roadmap="${item.id}" ${item.done?'checked':''} ${canWrite?'':'disabled'}><span></span><div><strong>${h(item.title)}</strong><small>${h(item.owner)} · 计划 ${h(item.due)}</small></div></label>`).join('');
@@ -450,6 +485,17 @@ $('#exportMissing').addEventListener('click',()=>downloadCsv('团体标准待补
 $('#exportLedger').addEventListener('click',()=>downloadCsv('科技发展部团体标准历史台账.csv',[['标准名称','计划编号','标准编号','当前环节','状态','委托方','联系人','立项论证费（万）','征求意见及审查费（万）','出版费（万）','总额（万）','专家劳务费','合同信息','备注','原表行'],...ledgerRecords.map(item=>[item.projectName,item.planCode,item.standardCode,stages[item.currentStage-1]?.name,item.status,item.commissioningUnit,item.contact,item.establishmentFee,item.reviewFee,item.publicationFee,item.totalFee,item.expertFee,item.contractInfo,item.remarks,item.sourceRow])]));
 $('#addSystemItem').addEventListener('click',async()=>{const title=prompt('请输入体系建设任务：');if(!title)return;try{if(backendEnabled){await apiRequest('/api/roadmap',{method:'POST',body:JSON.stringify({title})});await syncFromBackend()}else{roadmap.push({id:Date.now(),title,owner:'待指定',due:'待确定',done:false});save('cadp-roadmap-v2',roadmap)}renderSystem();showToast('体系任务已添加')}catch(error){showToast(error.message,'添加失败')}});
 $('#globalSearchButton').addEventListener('click',()=>{navigate('projects');$('#projectSearch').focus()});
+$('#modeBannerAction').addEventListener('click',async event=>{
+  const action=event.currentTarget.dataset.action;
+  if(action==='password'){navigate('settings');$('#passwordForm input[name="currentPassword"]').focus();return}
+  if(action==='local'){location.href='http://127.0.0.1:3000/';return}
+  if(action==='retry'){
+    event.currentTarget.classList.add('button-busy');
+    try{await syncFromBackend();renderAll();connectLiveSync();showToast('已连接统一数据库','连接成功')}
+    catch(error){if(error.status===401)showLogin();else showToast(error.message,'仍未连接')}
+    finally{event.currentTarget.classList.remove('button-busy')}
+  }
+});
 $('#passwordForm').addEventListener('submit',async event=>{
   event.preventDefault();const d=Object.fromEntries(new FormData(event.target)),button=$('button[type="submit"]',event.target);if(d.newPassword!==d.confirmPassword){showToast('两次输入的新密码不一致','无法保存');return}if(!backendEnabled){showToast('演示模式不能修改登录密码','尚未连接后台');return}button.classList.add('button-busy');
   try{await apiRequest('/api/account/password',{method:'POST',body:JSON.stringify({currentPassword:d.currentPassword,newPassword:d.newPassword})});await syncFromBackend();event.target.reset();renderAll();showToast('新密码已经生效','修改成功')}
@@ -475,12 +521,12 @@ document.addEventListener('click',event=>{if(!event.target.closest('.project-sel
 $('#loginDialog').addEventListener('cancel',event=>event.preventDefault());
 $('#loginForm').addEventListener('submit',async event=>{
   event.preventDefault();const d=Object.fromEntries(new FormData(event.target)),button=$('button[type="submit"]',event.target);button.classList.add('button-busy');$('#loginError').textContent='';
-  try{await apiRequest('/api/login',{method:'POST',body:JSON.stringify(d)});await syncFromBackend();$('#loginDialog').close();renderAll();if(currentUser?.mustChangePassword)navigate('settings');showToast(currentUser?.mustChangePassword?'请先修改初始密码':'已连接统一数据库','登录成功')}
+  try{await apiRequest('/api/login',{method:'POST',body:JSON.stringify(d)});await syncFromBackend();$('#loginDialog').close();renderAll();connectLiveSync();if(currentUser?.mustChangePassword)navigate('settings');showToast(currentUser?.mustChangePassword?'请先修改初始密码':'已连接统一数据库','登录成功')}
   catch(error){showLogin(error.message)}finally{button.classList.remove('button-busy')}
 });
 $('#logoutButton').addEventListener('click',async()=>{
   try{await apiRequest('/api/logout',{method:'POST',body:'{}'})}catch{}
-  backendEnabled=false;currentUser=null;$('#logoutButton').hidden=true;showLogin('已安全退出');
+  stopLiveSync();backendEnabled=false;currentUser=null;$('#logoutButton').hidden=true;renderModeBanner();showLogin('已安全退出');
 });
 
 initialize();

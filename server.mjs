@@ -17,6 +17,8 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 7));
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const MAX_BODY = 30 * 1024 * 1024;
+const eventClients = new Set();
+let dataRevision = Date.now();
 
 mkdirSync(UPLOAD_DIR, { recursive: true });
 mkdirSync(BACKUP_DIR, { recursive: true });
@@ -215,6 +217,40 @@ importLegacyLedger();
 function json(res, status, payload, extraHeaders = {}) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...extraHeaders });
   res.end(JSON.stringify(payload));
+}
+
+function sendEvent(res, event, payload) {
+  res.write('event: ' + event + '\n');
+  res.write('data: ' + JSON.stringify(payload) + '\n\n');
+}
+
+function broadcastChange(pathname, method) {
+  dataRevision += 1;
+  const payload = { revision: dataRevision, pathname, method, changedAt: now() };
+  for (const client of eventClients) {
+    try { sendEvent(client, 'change', payload); } catch { eventClients.delete(client); }
+  }
+}
+
+function openEventStream(req, res, user) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.flushHeaders?.();
+  eventClients.add(res);
+  sendEvent(res, 'ready', { revision: dataRevision, serverTime: now(), userId: user.id });
+  const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 25000);
+  heartbeat.unref();
+  const close = () => {
+    clearInterval(heartbeat);
+    eventClients.delete(res);
+  };
+  req.once('close', close);
+  res.once('close', close);
 }
 
 function readBody(req, limit = MAX_BODY) {
@@ -433,7 +469,7 @@ function bootstrap(user) {
     user: { id: user.id, username: user.username, displayName: user.display_name, role: user.role, mustChangePassword: !user.password_changed_at },
     permissions: { manageProjects: canManageLedger, manageLedger: canManageLedger, manageUsers: canAdmin, manageBackups: canAdmin },
     projects, missingItems, roadmap, activities, publishedStandards, documents, users, backups,
-    ledgerRecords, annualPlans, ledgerSummary, analytics: { standardsByYear }, serverTime: now()
+    ledgerRecords, annualPlans, ledgerSummary, analytics: { standardsByYear }, serverTime: now(), revision: dataRevision
   };
 }
 
@@ -497,6 +533,7 @@ async function handleApi(req, res, url) {
 
   if (method === 'GET' && pathname === '/api/bootstrap') return json(res, 200, bootstrap(user));
   if (method === 'GET' && pathname === '/api/session') return json(res, 200, { user });
+  if (method === 'GET' && pathname === '/api/events') return openEventStream(req, res, user);
 
   if (method === 'POST' && pathname === '/api/account/password') {
     const body = await readJson(req);
@@ -789,7 +826,14 @@ async function handleApi(req, res, url) {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', 'http://' + (req.headers.host || 'localhost'));
-    if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+    if (url.pathname.startsWith('/api/')) {
+      const method = req.method || 'GET';
+      const shouldBroadcast = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !['/api/login', '/api/logout'].includes(url.pathname);
+      if (shouldBroadcast) res.once('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) broadcastChange(url.pathname, method);
+      });
+      return await handleApi(req, res, url);
+    }
     if (req.method === 'GET' && serveStatic(url.pathname, res)) return;
     json(res, 404, { error: '页面不存在' });
   } catch (error) {
@@ -815,6 +859,8 @@ backupTimer.unref();
 function shutdown() {
   clearTimeout(initialBackupTimer);
   clearInterval(backupTimer);
+  for (const client of eventClients) client.end();
+  eventClients.clear();
   server.close(() => {
     db.close();
     process.exit(0);
