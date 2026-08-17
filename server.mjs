@@ -332,8 +332,19 @@ function activityRow(row) {
   return { id: row.id, time: formatChinaTime(row.created_at), project: row.project_name, action: row.action, operator: row.operator, result: row.result };
 }
 
+function previewContentType(row) {
+  const types = new Map([
+    ['.pdf', 'application/pdf'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'],
+    ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.bmp', 'image/bmp'], ['.txt', 'text/plain; charset=utf-8'],
+    ['.md', 'text/plain; charset=utf-8'], ['.log', 'text/plain; charset=utf-8'], ['.csv', 'text/csv; charset=utf-8'],
+    ['.json', 'application/json; charset=utf-8']
+  ]);
+  return types.get(extname(row.original_name).toLowerCase()) || '';
+}
+
 function documentRow(row) {
-  return { id: row.id, projectId: row.project_id, missingItemId: row.missing_item_id, stage: row.stage, name: row.original_name, mimeType: row.mime_type, size: row.size_bytes, createdAt: formatChinaTime(row.created_at), downloadUrl: '/api/documents/' + row.id + '/download' };
+  const previewType = previewContentType(row);
+  return { id: row.id, projectId: row.project_id, missingItemId: row.missing_item_id, stage: row.stage, name: row.original_name, mimeType: row.mime_type, size: row.size_bytes, createdAt: formatChinaTime(row.created_at), previewUrl: previewType ? '/api/documents/' + row.id + '/preview' : '', downloadUrl: '/api/documents/' + row.id + '/download' };
 }
 
 function ledgerRow(row, includeSensitive = false) {
@@ -784,14 +795,17 @@ async function handleApi(req, res, url) {
     return json(res, 201, { document: documentRow(db.prepare('SELECT * FROM documents WHERE id = ?').get(Number(result.lastInsertRowid))) });
   }
 
-  match = pathname.match(/^\/api\/documents\/(\d+)\/download$/);
+  match = pathname.match(/^\/api\/documents\/(\d+)\/(download|preview)$/);
   if (method === 'GET' && match) {
     const document = db.prepare('SELECT * FROM documents WHERE id = ?').get(Number(match[1]));
     if (!document) return json(res, 404, { error: '文件不存在' });
     const file = join(UPLOAD_DIR, document.stored_name);
     if (!existsSync(file)) return json(res, 404, { error: '文件记录存在，但磁盘文件缺失' });
+    const preview = match[2] === 'preview';
+    const contentType = preview ? previewContentType(document) : document.mime_type;
+    if (preview && !contentType) return json(res, 415, { error: '该格式不支持在线预览，请下载后查看' });
     const encoded = encodeURIComponent(document.original_name);
-    res.writeHead(200, { 'Content-Type': document.mime_type, 'Content-Length': document.size_bytes, 'Content-Disposition': "attachment; filename*=UTF-8''" + encoded, 'X-Content-Type-Options': 'nosniff' });
+    res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': document.size_bytes, 'Content-Disposition': (preview ? 'inline' : 'attachment') + "; filename*=UTF-8''" + encoded, 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' });
     createReadStream(file).pipe(res);
     return;
   }

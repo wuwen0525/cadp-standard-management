@@ -379,7 +379,7 @@ function renderArchiveFiles(){
   const files=documents.filter(item=>item.projectId===project.id).sort((a,b)=>b.id-a.id);
   $('#archiveProjectName').textContent=project.name;$('#archiveStageSelect').value=String(project.current);
   $('#archiveUploadForm').hidden=!canWriteData();
-  $('#archiveFileList').innerHTML=files.map(file=>`<div class="archive-file-item"><span>▤</span><div><strong>${h(file.name)}</strong><small>${h(stages[file.stage-1]?.name||'项目档案')} · ${formatBytes(file.size)} · ${h(file.createdAt)}</small></div><a href="${h(file.downloadUrl)}">下载</a></div>`).join('')||'<div class="empty-state">暂无已归档文件</div>';
+  $('#archiveFileList').innerHTML=files.map(file=>`<div class="archive-file-item"><span>▤</span><div><strong>${h(file.name)}</strong><small>${h(stages[file.stage-1]?.name||'项目档案')} · ${formatBytes(file.size)} · ${h(file.createdAt)}</small></div><div class="archive-file-actions">${file.previewUrl?`<a href="${h(file.previewUrl)}" target="_blank" rel="noopener">预览</a>`:''}<a href="${h(file.downloadUrl)}">下载</a></div></div>`).join('')||'<div class="empty-state">暂无已归档文件</div>';
 }
 
 function openArchive(id){
