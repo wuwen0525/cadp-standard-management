@@ -224,12 +224,19 @@ test('数据库接口、文件归档、实时同步和重启持久化', async ()
     assert.equal(previewResponse.headers.get('x-content-type-options'), 'nosniff');
     assert.deepEqual(Buffer.from(await previewResponse.arrayBuffer()), fileContent);
 
-    const archiveUpload = await (await request('/api/projects/' + created.project.id + '/documents?stage=2&filename=archive-note.txt', {
+    const archiveUpload = await (await request('/api/projects/' + created.project.id + '/documents?stage=2&category=立项与任务&filename=archive-note.txt', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: Buffer.from('project archive file', 'utf8')
     })).json();
     assert.equal(archiveUpload.document.stage, 2);
+    assert.equal(archiveUpload.document.category, '立项与任务');
+    const recategorized = await (await request('/api/documents/' + archiveUpload.document.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: '支撑证明材料' })
+    })).json();
+    assert.equal(recategorized.document.category, '支撑证明材料');
 
     const htmlUpload = await (await request('/api/projects/' + created.project.id + '/documents?stage=2&filename=unsafe.html', {
       method: 'POST',

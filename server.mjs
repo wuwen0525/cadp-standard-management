@@ -17,6 +17,7 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_DAYS = Math.max(1, Number(process.env.SESSION_DAYS || 7));
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const MAX_BODY = 30 * 1024 * 1024;
+const DOCUMENT_CATEGORIES = ['标准文本', '编制说明', '意见征集与处理', '审查与专家材料', '立项与任务', '合同与费用', '报批与审批', '发布与证书', '支撑证明材料', '其他材料'];
 const eventClients = new Set();
 let dataRevision = Date.now();
 
@@ -54,7 +55,10 @@ function ensureColumn(table, column, definition) {
 ensureColumn('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('users', 'password_changed_at', 'TEXT');
 ensureColumn('projects', 'archived', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('documents', 'category', "TEXT NOT NULL DEFAULT '其他材料'");
+ensureColumn('documents', 'source_path', "TEXT NOT NULL DEFAULT ''");
 db.exec('CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived, status, current_stage);');
+db.exec('CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(project_id, category, stage);');
 
 function now() {
   return new Date().toISOString();
@@ -342,9 +346,34 @@ function previewContentType(row) {
   return types.get(extname(row.original_name).toLowerCase()) || '';
 }
 
+function inferDocumentCategory(value, stage = 1) {
+  const name = String(value || '');
+  if (/编制说明/.test(name)) return '编制说明';
+  if (/征求意见|意见汇总|意见处理|回函|反馈意见|采纳意见/.test(name)) return '意见征集与处理';
+  if (/协议|合同|费用|经费|发票|付款|报价|财务/.test(name)) return '合同与费用';
+  if (/公告|发布|官网|全国团体标准|编号|证书|出版|公示/.test(name)) return '发布与证书';
+  if (/报批|审批|签报|报送/.test(name)) return '报批与审批';
+  if (/专家|审查|评审|论证|表决|签字|会议|纪要|签到|通知/.test(name)) return '审查与专家材料';
+  if (/提案|立项|任务书|启动会|申请书|项目计划/.test(name)) return '立项与任务';
+  if (/标准|草案|送审稿|报批稿|征求意见稿|正式稿|终稿/.test(name)) return '标准文本';
+  if (/证明|资质|执照|承诺|授权|附件/.test(name)) return '支撑证明材料';
+  if (stage <= 3 || [6, 7].includes(Number(stage))) return '立项与任务';
+  if (stage === 4) return '合同与费用';
+  if ([5, 10, 11].includes(Number(stage))) return '审查与专家材料';
+  if (stage === 9) return '意见征集与处理';
+  if ([12, 13].includes(Number(stage))) return '报批与审批';
+  if (stage >= 14) return '发布与证书';
+  return '其他材料';
+}
+
+function documentCategory(value, name, stage) {
+  const category = String(value || '').trim();
+  return DOCUMENT_CATEGORIES.includes(category) ? category : inferDocumentCategory(name, stage);
+}
+
 function documentRow(row) {
   const previewType = previewContentType(row);
-  return { id: row.id, projectId: row.project_id, missingItemId: row.missing_item_id, stage: row.stage, name: row.original_name, mimeType: row.mime_type, size: row.size_bytes, createdAt: formatChinaTime(row.created_at), previewUrl: previewType ? '/api/documents/' + row.id + '/preview' : '', downloadUrl: '/api/documents/' + row.id + '/download' };
+  return { id: row.id, projectId: row.project_id, missingItemId: row.missing_item_id, stage: row.stage, category: row.category || inferDocumentCategory(row.original_name, row.stage), sourcePath: row.source_path || '', name: row.original_name, mimeType: row.mime_type, size: row.size_bytes, createdAt: formatChinaTime(row.created_at), previewUrl: previewType ? '/api/documents/' + row.id + '/preview' : '', downloadUrl: '/api/documents/' + row.id + '/download' };
 }
 
 function ledgerRow(row, includeSensitive = false) {
@@ -768,7 +797,8 @@ async function handleApi(req, res, url) {
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(join(UPLOAD_DIR, storedName), content, { flag: 'wx' });
     const stamp = now();
-    const result = db.prepare('INSERT INTO documents (project_id, missing_item_id, stage, original_name, stored_name, mime_type, size_bytes, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(item.project_id, id, item.stage, originalName, storedName, String(req.headers['content-type'] || 'application/octet-stream'), content.length, user.id, stamp);
+    const category = documentCategory(url.searchParams.get('category'), originalName, item.stage);
+    const result = db.prepare('INSERT INTO documents (project_id, missing_item_id, stage, category, original_name, stored_name, mime_type, size_bytes, uploaded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(item.project_id, id, item.stage, category, originalName, storedName, String(req.headers['content-type'] || 'application/octet-stream'), content.length, user.id, stamp);
     db.prepare('UPDATE missing_items SET state = \'resolved\', filename = ?, updated_at = ? WHERE id = ?').run(originalName, stamp, id);
     db.prepare('UPDATE projects SET files_count = files_count + 1, updated_at = ? WHERE id = ?').run(stamp, item.project_id);
     logActivity(item.project_id, item.project_name, item.material + '：上传 ' + originalName, user.display_name);
@@ -789,10 +819,26 @@ async function handleApi(req, res, url) {
     const storedName = randomBytes(16).toString('hex') + extname(originalName).slice(0, 12);
     await writeFile(join(UPLOAD_DIR, storedName), content, { flag: 'wx' });
     const stamp = now();
-    const result = db.prepare('INSERT INTO documents (project_id, missing_item_id, stage, original_name, stored_name, mime_type, size_bytes, uploaded_by, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)').run(projectId, stage, originalName, storedName, String(req.headers['content-type'] || 'application/octet-stream'), content.length, user.id, stamp);
+    const category = documentCategory(url.searchParams.get('category'), originalName, stage);
+    const result = db.prepare('INSERT INTO documents (project_id, missing_item_id, stage, category, original_name, stored_name, mime_type, size_bytes, uploaded_by, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)').run(projectId, stage, category, originalName, storedName, String(req.headers['content-type'] || 'application/octet-stream'), content.length, user.id, stamp);
     db.prepare('UPDATE projects SET files_count = files_count + 1, updated_at = ? WHERE id = ?').run(stamp, projectId);
     logActivity(projectId, project.name, '归档文件：' + originalName, user.display_name);
     return json(res, 201, { document: documentRow(db.prepare('SELECT * FROM documents WHERE id = ?').get(Number(result.lastInsertRowid))) });
+  }
+
+  match = pathname.match(/^\/api\/documents\/(\d+)$/);
+  if (method === 'PATCH' && match) {
+    if (!requireRole(user, res, ['admin', 'operator'])) return;
+    const id = Number(match[1]);
+    const document = db.prepare('SELECT documents.*, projects.name AS project_name FROM documents JOIN projects ON projects.id = documents.project_id WHERE documents.id = ?').get(id);
+    if (!document) return json(res, 404, { error: '文件不存在' });
+    const body = await readJson(req);
+    const stage = body.stage === undefined ? document.stage : Math.min(15, Math.max(1, Number(body.stage)));
+    const category = body.category === undefined ? document.category : String(body.category || '').trim();
+    if (!DOCUMENT_CATEGORIES.includes(category)) return json(res, 400, { error: '文件分类无效' });
+    db.prepare('UPDATE documents SET stage = ?, category = ? WHERE id = ?').run(stage, category, id);
+    logActivity(document.project_id, document.project_name, '调整文件分类：' + document.original_name + ' → ' + category, user.display_name);
+    return json(res, 200, { document: documentRow(db.prepare('SELECT * FROM documents WHERE id = ?').get(id)) });
   }
 
   match = pathname.match(/^\/api\/documents\/(\d+)\/(download|preview)$/);

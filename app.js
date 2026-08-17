@@ -15,6 +15,7 @@ const stages = [
   {name:'标准发布',short:'发布',owner:'中国灾害防御协会',duration:'协会文件形式发布',materials:['标准发布公告','团体标准正式文本'],requirements:['全国平台公开标准信息','协会官网同步发布','归档公告和正式文本']},
   {name:'标准出版',short:'出版',owner:'中国灾害防御协会',duration:'发布后安排',materials:['标准出版稿','正式出版物'],requirements:['核对出版稿一致性','记录出版版本','转入实施与复审管理']}
 ];
+const documentCategories=['标准文本','编制说明','意见征集与处理','审查与专家材料','立项与任务','合同与费用','报批与审批','发布与证书','支撑证明材料','其他材料'];
 
 const $=(selector,root=document)=>root.querySelector(selector);
 const $$=(selector,root=document)=>[...root.querySelectorAll(selector)];
@@ -232,6 +233,12 @@ function buildFilters(){
   $('#missingStageFilter').innerHTML='<option value="all">全部环节</option>'+[...new Set(missingItems.map(i=>i.category))].map(n=>`<option>${n}</option>`).join('');
   $('#editStageSelect').innerHTML=stages.map((s,i)=>`<option value="${i+1}">${i+1}. ${s.name}</option>`).join('');
   $('#archiveStageSelect').innerHTML=stages.map((s,i)=>`<option value="${i+1}">${i+1}. ${h(s.name)}</option>`).join('');
+  $('#archiveCategorySelect').innerHTML='<option value="">自动识别</option>'+documentCategories.map(category=>`<option>${h(category)}</option>`).join('');
+  const archiveFilterStage=$('#archiveStageFilter').value||'all',archiveFilterCategory=$('#archiveCategoryFilter').value||'all';
+  $('#archiveStageFilter').innerHTML='<option value="all">全部流程节点</option>'+stages.slice(0,15).map((s,i)=>`<option value="${i+1}">${i+1}. ${h(s.short)}</option>`).join('');
+  $('#archiveCategoryFilter').innerHTML='<option value="all">全部材料分类</option>'+documentCategories.map(category=>`<option>${h(category)}</option>`).join('');
+  $('#archiveStageFilter').value=[...$('#archiveStageFilter').options].some(option=>option.value===archiveFilterStage)?archiveFilterStage:'all';
+  $('#archiveCategoryFilter').value=[...$('#archiveCategoryFilter').options].some(option=>option.value===archiveFilterCategory)?archiveFilterCategory:'all';
   $('#ledgerStageSelect').innerHTML=stages.map((s,i)=>`<option value="${i+1}">${i+1}. ${h(s.name)}</option>`).join('');
   const ledgerStageValue=$('#ledgerStageFilter').value||'all';
   $('#ledgerStageFilter').innerHTML='<option value="all">全部环节</option>'+stages.map((s,i)=>`<option value="${i+1}">${i+1}. ${h(s.short)}</option>`).join('');
@@ -333,7 +340,7 @@ function renderStageDetail(){
   $('#stageDetail').innerHTML=`<div class="detail-cover"><div class="detail-topline"><span class="step-label">STEP ${String(selectedStage).padStart(2,'0')} / 15</span><span class="stage-badge">${isDone?'已完成':isActive?'办理中':'待开始'}</span></div><h2>${stage.name}</h2><p>${stage.owner} · ${stage.duration}</p></div><div class="detail-body"><section class="detail-section"><h3>所需材料</h3>${stage.materials.map(material=>{const isMissing=missingAtStage.some(i=>material.includes(i.material)||i.material.includes(material));return `<div class="material-item ${isMissing?'missing-material':''}"><span class="material-icon">${isMissing?'!':'W'}</span><div><strong>${material}</strong><small>${isMissing?'目录中未识别到，需确认':isDone?'已完成环节材料':'按节点准备'}</small></div>${isMissing?'<button data-jump-missing>补充</button>':'<button data-preview>查看</button>'}</div>`}).join('')}</section><section class="detail-section"><h3>办理要求</h3><ul class="requirement-list">${stage.requirements.map(r=>`<li>${r}</li>`).join('')}</ul>${stage.branch?`<div class="branch-note"><strong>退回路径</strong>${stage.branch}</div>`:''}</section><section class="detail-section"><h3>项目备注</h3><p class="project-note">${selectedProject.notes||'暂无备注'}</p></section><div class="detail-actions">${stage.review&&isActive?'<button class="danger-button" id="returnStage">退回修改</button>':''}<button class="primary" id="detailAction">${isActive?'办理当前环节':'查看记录'}</button></div></div>`;
   selectedProject.notes=originalNotes;
   if(!canWrite){$('#returnStage')?.remove();$('#detailAction').textContent='查看记录'}
-  if(stageDocuments.length){const section=document.createElement('section');section.className='detail-section';section.innerHTML=`<h3>已归档文件</h3><div class="file-list">${stageDocuments.map(file=>`<a class="file-link" href="${h(file.downloadUrl)}"><span>▤ ${h(file.name)}</span><small>${h(file.createdAt)}</small></a>`).join('')}</div>`;$('.detail-actions',$('#stageDetail')).before(section)}
+  if(stageDocuments.length){const section=document.createElement('section');section.className='detail-section';section.innerHTML=`<h3>已归档文件</h3><div class="file-list">${stageDocuments.map(file=>`<a class="file-link" href="${h(file.downloadUrl)}"><span>▤ ${h(file.name)}</span><small>${h(file.category||'其他材料')} · ${h(file.createdAt)}</small></a>`).join('')}</div>`;$('.detail-actions',$('#stageDetail')).before(section)}
   $$('[data-jump-missing]').forEach(b=>b.addEventListener('click',()=>navigate('missing'))); $$('[data-preview]').forEach(b=>b.addEventListener('click',()=>showToast('文件预览将在正式文件存储接入后启用')));
   $('#detailAction').addEventListener('click',()=>showToast(isActive?'已打开当前环节办理信息':'办理记录已显示'));
   if($('#returnStage'))$('#returnStage').addEventListener('click',async()=>{
@@ -376,14 +383,25 @@ function formatBytes(value){
 
 function renderArchiveFiles(){
   const project=projects.find(item=>item.id===archiveProjectId);if(!project)return;
-  const files=documents.filter(item=>item.projectId===project.id).sort((a,b)=>b.id-a.id);
+  const query=$('#archiveFileSearch').value.trim().toLowerCase(),stageFilter=$('#archiveStageFilter').value,categoryFilter=$('#archiveCategoryFilter').value;
+  const allFiles=documents.filter(item=>item.projectId===project.id);
+  const files=allFiles.filter(file=>(stageFilter==='all'||String(file.stage)===stageFilter)&&(categoryFilter==='all'||file.category===categoryFilter)&&`${file.name}${file.category||''}${file.sourcePath||''}`.toLowerCase().includes(query)).sort((a,b)=>a.stage-b.stage||(a.category||'').localeCompare(b.category||'','zh-CN')||b.id-a.id);
   $('#archiveProjectName').textContent=project.name;$('#archiveStageSelect').value=String(project.current);
   $('#archiveUploadForm').hidden=!canWriteData();
-  $('#archiveFileList').innerHTML=files.map(file=>`<div class="archive-file-item"><span>▤</span><div><strong>${h(file.name)}</strong><small>${h(stages[file.stage-1]?.name||'项目档案')} · ${formatBytes(file.size)} · ${h(file.createdAt)}</small></div><div class="archive-file-actions">${file.previewUrl?`<a href="${h(file.previewUrl)}" target="_blank" rel="noopener">预览</a>`:''}<a href="${h(file.downloadUrl)}">下载</a></div></div>`).join('')||'<div class="empty-state">暂无已归档文件</div>';
+  $('#archiveFileSummary').textContent=`显示 ${files.length} / ${allFiles.length} 个文件`;
+  const groups=[];
+  for(const file of files){const key=`${file.stage}|${file.category||'其他材料'}`;let group=groups.find(item=>item.key===key);if(!group){group={key,stage:file.stage,category:file.category||'其他材料',files:[]};groups.push(group)}group.files.push(file)}
+  $('#archiveFileList').innerHTML=groups.map(group=>`<section class="archive-file-group"><div class="archive-group-title"><div><span>${String(group.stage).padStart(2,'0')}</span><strong>${h(stages[group.stage-1]?.name||'项目档案')}</strong><em>${h(group.category)}</em></div><small>${group.files.length} 个文件</small></div>${group.files.map(file=>`<div class="archive-file-item"><span>▤</span><div><strong>${h(file.name)}</strong><small>${formatBytes(file.size)} · ${h(file.createdAt)}</small>${file.sourcePath?`<small class="archive-source-path">原目录：${h(file.sourcePath)}</small>`:''}</div><div class="archive-file-controls">${canWriteData()?`<select data-document-category="${file.id}" aria-label="调整文件分类">${documentCategories.map(category=>`<option ${category===(file.category||'其他材料')?'selected':''}>${h(category)}</option>`).join('')}</select>`:`<i>${h(file.category||'其他材料')}</i>`}<div class="archive-file-actions">${file.previewUrl?`<a href="${h(file.previewUrl)}" target="_blank" rel="noopener">预览</a>`:''}<a href="${h(file.downloadUrl)}">下载</a></div></div></div>`).join('')}</section>`).join('')||'<div class="empty-state">没有符合条件的归档文件</div>';
+  $$('[data-document-category]',$('#archiveFileList')).forEach(select=>select.addEventListener('change',()=>updateDocumentCategory(Number(select.dataset.documentCategory),select.value)));
 }
 
 function openArchive(id){
-  archiveProjectId=id;$('#archiveUploadForm').reset();renderArchiveFiles();$('#archiveDialog').showModal();
+  archiveProjectId=id;$('#archiveUploadForm').reset();$('#archiveFileSearch').value='';$('#archiveStageFilter').value='all';$('#archiveCategoryFilter').value='all';renderArchiveFiles();$('#archiveDialog').showModal();
+}
+
+async function updateDocumentCategory(id,category){
+  try{await apiRequest(`/api/documents/${id}`,{method:'PATCH',body:JSON.stringify({category})});await syncFromBackend(archiveProjectId);renderArchiveFiles();showToast(`已归入“${category}”`,'分类已更新')}
+  catch(error){renderArchiveFiles();showToast(error.message,'分类失败')}
 }
 
 async function toggleArchive(id){
@@ -435,6 +453,7 @@ $('#projectSelectButton').addEventListener('click',()=>$('#projectMenu').classLi
 $('#projectSearch').addEventListener('input',renderProjectTable); $('#statusFilter').addEventListener('change',renderProjectTable);$('#archiveFilter').addEventListener('change',renderProjectTable);
 $('#ledgerSearch').addEventListener('input',renderLedger);$('#ledgerStageFilter').addEventListener('change',renderLedger);$('#ledgerStatusFilter').addEventListener('change',renderLedger);
 $('#missingSearch').addEventListener('input',renderMissing); $('#missingStageFilter').addEventListener('change',renderMissing); $('#missingStateFilter').addEventListener('change',renderMissing);
+$('#archiveFileSearch').addEventListener('input',renderArchiveFiles);$('#archiveStageFilter').addEventListener('change',renderArchiveFiles);$('#archiveCategoryFilter').addEventListener('change',renderArchiveFiles);
 $('#standardSearch').addEventListener('input',renderStandardRows);
 $$('[data-close-dialog]').forEach(b=>b.addEventListener('click',()=>$('#projectDialog').close())); $$('[data-close-edit]').forEach(b=>b.addEventListener('click',()=>$('#editDialog').close())); $$('[data-close-upload]').forEach(b=>b.addEventListener('click',()=>$('#uploadDialog').close()));$$('[data-close-archive]').forEach(b=>b.addEventListener('click',()=>$('#archiveDialog').close()));$$('[data-close-user]').forEach(b=>b.addEventListener('click',()=>$('#userDialog').close()));$$('[data-close-ledger]').forEach(b=>b.addEventListener('click',()=>$('#ledgerDialog').close()));
 $('#refreshAnalytics').addEventListener('click',async()=>{const button=$('#refreshAnalytics');button.classList.add('button-busy');try{if(backendEnabled)await syncFromBackend();renderAnalytics();showToast('数据看板已刷新')}catch(error){showToast(error.message,'刷新失败')}finally{button.classList.remove('button-busy')}});
@@ -514,7 +533,8 @@ $('#createBackup').addEventListener('click',async()=>{
 });
 $('#archiveUploadForm').addEventListener('submit',async event=>{
   event.preventDefault();const form=event.target,file=form.elements.file.files[0],stage=Number(form.elements.stage.value),button=$('button[type="submit"]',form);if(!file)return;if(file.size>30*1024*1024){showToast('单个文件不能超过 30 MB','文件过大');return}if(!backendEnabled){showToast('演示模式不能保存真实文件','尚未连接后台');return}button.classList.add('button-busy');
-  try{await apiRequest(`/api/projects/${archiveProjectId}/documents?stage=${stage}&filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});await syncFromBackend(archiveProjectId);form.reset();renderArchiveFiles();showToast('文件已归档')}
+  const category=form.elements.category.value;
+  try{await apiRequest(`/api/projects/${archiveProjectId}/documents?stage=${stage}&category=${encodeURIComponent(category)}&filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':file.type||'application/octet-stream'},body:file});await syncFromBackend(archiveProjectId);form.reset();$('#archiveStageSelect').value=String(projects.find(item=>item.id===archiveProjectId)?.current||1);renderArchiveFiles();showToast('文件已归档')}
   catch(error){showToast(error.message,'归档失败')}finally{button.classList.remove('button-busy')}
 });
 document.addEventListener('click',event=>{if(!event.target.closest('.project-selector'))$('#projectMenu').classList.remove('open')});
